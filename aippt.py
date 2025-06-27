@@ -255,9 +255,14 @@ def process_content_slides(ppt, pages, design_number, layout_index):
 
 def determine_available_layouts(ppt, layout_index):
     """确定可用布局"""
-    if layout_index in range(0, 12):
-        return range(1, 12)  # 可用布局索引, 一般ppt有 0-11 的布局，0给首页
-    return [1, 7, 8]  # 默认可用布局索引
+    layout_count = len(ppt.slide_layouts)
+    logging.info(f'当前ppt模板的布局数量为:{layout_count}')
+
+    if layout_index in range(1, layout_count):
+        return layout_index  # 可用布局索引, 一般ppt有 0-11 的布局，0给首页
+    if layout_index == 0:
+        return range(1, layout_count)
+    return [1, 7, 8]  # 手动指定布局索引组合，layout_index=-1时使用
 
 
 def add_simple_content_slide(ppt, page):
@@ -287,14 +292,14 @@ def add_simple_content_slide(ppt, page):
 def add_designed_content_slide(ppt, page, available_layouts, last_used_layout, slide_index):
     """添加设计内容页"""
     slide_added = False
-    attempts = 0
-    max_attempts = 5  # 最大尝试次数
+    attempts = set()
+    max_attempts = set(available_layouts) if isinstance(available_layouts, list) else set(range(1, len(ppt.slide_layouts)))
 
-    while not slide_added and attempts < max_attempts:
-        attempts += 1
+    while not slide_added and not attempts == max_attempts:
 
         # 选择布局
-        layout_index = select_layout(available_layouts, last_used_layout)
+        layout_index = select_layout(available_layouts, last_used_layout, attempts)
+        attempts.add(layout_index)
 
         try:
             # 获取布局
@@ -311,8 +316,10 @@ def add_designed_content_slide(ppt, page, available_layouts, last_used_layout, s
             content_ph, content_parts = find_optimal_placeholder(slide_layout, page['content'])
             logging.info(f"内容占位符：{content_ph}")
 
-            if not title_ph or not all(content_ph):
+            if not (title_ph and all(content_ph)):  # 保证标题和内容占位符都存在
                 logging.info(f"布局{layout_index}缺少标题或内容占位符")
+                if isinstance(available_layouts, int):
+                    available_layouts = max_attempts
                 continue
 
             # 添加幻灯片
@@ -324,7 +331,7 @@ def add_designed_content_slide(ppt, page, available_layouts, last_used_layout, s
             set_placeholder_text(slide, title_ph, page['title'])
 
             # 设置内容
-            logging.info(f"此页PPT使用了布局{layout_index}")
+            logging.info(f"第{slide_index + 1}页PPT, 使用了布局{layout_index}")
             fill_content_placeholder(slide, content_ph, content_parts)
 
             # 处理其他占位符
@@ -335,12 +342,16 @@ def add_designed_content_slide(ppt, page, available_layouts, last_used_layout, s
             continue
 
 
-def select_layout(available_layouts, last_used_layout):
+def select_layout(available_layouts, last_used_layout, attempts):
     """选择布局"""
-    layout_index = random.choice(available_layouts)
+    if isinstance(available_layouts, int):
+        return available_layouts
+
+    unused_layouts = list(set(available_layouts) - attempts)
+    layout_index = random.choice(unused_layouts)
     # 确保新布局与上次不同
-    while layout_index == last_used_layout:
-        layout_index = random.choice(available_layouts)
+    while layout_index == last_used_layout and len(unused_layouts) > 1:
+        layout_index = random.choice(unused_layouts)
     return layout_index
 
 
@@ -634,7 +645,7 @@ if __name__ == '__main__':
         # 输入需求
         topic = input('输入主题:')
         pages = int(input('输入页数:'))
-        template_num = int(input('输入模板编号(0-7):'))
+        template_num = int(input('输入模板编号(0-8):'))
         layout_index = int(input('输入布局编号(-1-11):'))
         # 生成PPT内容
         if os.path.exists(f"{cache_dir}/{topic}.txt") and last_topic == topic and last_pages == pages:
