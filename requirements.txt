@@ -1,0 +1,7 @@
+Flask
+python-pptx
+langchain
+langchain-community
+langchain-openai
+python-dotenv
+pytz
